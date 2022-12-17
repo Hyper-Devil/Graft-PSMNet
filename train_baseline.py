@@ -18,11 +18,11 @@ import loss_functions as lf
 
 parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
-parser.add_argument('--gpu_id', type=str, default='0, 1')
-parser.add_argument('--seed', type=str, default=0)
-parser.add_argument('--batch_size', type=int, default=6)
+parser.add_argument('--gpu_id', type=str, default='0')
+parser.add_argument('--seed', type=str, default=42)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--epoch', type=int, default=8)
-parser.add_argument('--data_path', type=str, default='/media/data/dataset/SceneFlow/')
+parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
 parser.add_argument('--max_disp', type=int, default=192)
 parser.add_argument('--color_transform', action='store_true', default=False)
@@ -35,9 +35,10 @@ cuda = torch.cuda.is_available()
 
 torch.manual_seed(args.seed)
 if cuda:
+    # 为所有GPU设置种子
     torch.cuda.manual_seed(args.seed)
 
-
+# 数据list。all表示所有训练数据，test表示测试数据
 all_limg, all_rimg, all_ldisp, all_rdisp, test_limg, test_rimg, test_ldisp, test_rdisp = sf.sf_loader(args.data_path)
 
 trainLoader = torch.utils.data.DataLoader(
@@ -69,7 +70,7 @@ def train(imgL, imgR, gt_left, gt_right):
         imgL, imgR = imgL.cuda(), imgR.cuda()
         gt_left, gt_right = gt_left.cuda(), gt_right.cuda()
 
-    optimizer.zero_grad()
+    optimizer.zero_grad()  # 清空过往梯度
 
     left_fea = fe_model(imgL)
     right_fea = fe_model(imgR)
@@ -81,10 +82,10 @@ def train(imgL, imgR, gt_left, gt_right):
 
     loss = 0.1 * loss1 + loss2
 
-    loss.backward()
-    optimizer.step()
+    loss.backward() # 反向传播，计算当前梯度；
+    optimizer.step() # 根据梯度更新网络参数
 
-    return loss1.item(), loss2.item()
+    return loss1.item(), loss2.item()   #每对key和value组成一个元组，并把这些元组放在列表中
 
 
 def adjust_learning_rate(optimizer, epoch):
@@ -119,6 +120,7 @@ def main():
         total_train_loss2 = 0
         adjust_learning_rate(optimizer, epoch)
 
+        # trainLoader疑似list
         for batch_id, (imgL, imgR, disp_L, disp_R) in enumerate(tqdm(trainLoader)):
             train_loss1, train_loss2 = train(imgL, imgR, disp_L, disp_R)
             total_train_loss1 += train_loss1
@@ -135,7 +137,7 @@ def main():
         if not os.path.exists(args.save_path):
             os.mkdir(args.save_path)
         save_model_path = args.save_path + 'checkpoint_baseline_{}epoch.tar'.format(epoch)
-        torch.save(state, save_model_path)
+        torch.save(state, save_model_path) # 存checkpoint
 
         torch.cuda.empty_cache()
 

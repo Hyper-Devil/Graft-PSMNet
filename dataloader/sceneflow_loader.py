@@ -1,7 +1,7 @@
 import os
 from PIL import Image
 from dataloader import readpfm as rp
-import dataloader.preprocess
+# import dataloader.preprocess
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import numpy as np
@@ -17,11 +17,13 @@ def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
 
-# filepath = '/media/data/LiuBiyang/SceneFlow/'
+# filepath = '/home/whd/Graft-PSMNet/SceneFlow/'
 def sf_loader(filepath):
-
+    # 确定filepath下文件夹数目，SceneFlow共六个文件夹
     classes = [d for d in os.listdir(filepath) if os.path.isdir(os.path.join(filepath, d))]
+    # 数据集名称_frames_cleanpass
     image = [img for img in classes if img.find('frames_cleanpass') > -1]
+    # 数据集名称_disparity
     disparity = [disp for disp in classes if disp.find('disparity') > -1]
 
     all_left_img = []
@@ -33,10 +35,12 @@ def sf_loader(filepath):
     test_left_disp = []
     test_right_disp = []
 
+
+    # monkaa数据集↓  ######################################## 
     monkaa_img = filepath + [x for x in image if 'monkaa' in x][0]
     monkaa_disp = filepath + [x for x in disparity if 'monkaa' in x][0]
     monkaa_dir = os.listdir(monkaa_img)
-    for dd in monkaa_dir:
+    for dd in monkaa_dir: # 数据集文件夹内包含很多子文件夹
         left_path = monkaa_img + '/' + dd + '/left/'
         right_path = monkaa_img + '/' + dd + '/right/'
         disp_path = monkaa_disp + '/' + dd + '/left/'
@@ -51,15 +55,17 @@ def sf_loader(filepath):
                 all_left_disp.append(disp_path + img.split(".")[0] + '.pfm')
                 all_right_disp.append(rdisp_path + img.split(".")[0] + '.pfm')
 
+
+    # flyingthings3d数据集↓  ######################################## 
     flying_img = filepath + [x for x in image if 'flying' in x][0]
     flying_disp = filepath + [x for x in disparity if 'flying' in x][0]
-    fimg_train = flying_img + '/TRAIN/'
+    fimg_train = flying_img + '/TRAIN/'  # 数据集内就是这样，分为训练、测试
     fimg_test = flying_img + '/TEST/'
     fdisp_train = flying_disp + '/TRAIN/'
     fdisp_test = flying_disp + '/TEST/'
-    fsubdir = ['A', 'B', 'C']
+    fsubdir = ['A', 'B', 'C'] # 训练/测试内分为ABC三部分，每部分内700+文件夹
 
-    for dd in fsubdir:
+    for dd in fsubdir: # 训练
         imgs_path = fimg_train + dd + '/'
         disps_path = fdisp_train + dd + '/'
         imgs = os.listdir(imgs_path)
@@ -78,7 +84,7 @@ def sf_loader(filepath):
                     all_left_disp.append(disp_path + img.split(".")[0] + '.pfm')
                     all_right_disp.append(rdisp_path + img.split(".")[0] + '.pfm')
 
-    for dd in fsubdir:
+    for dd in fsubdir: # 测试
         imgs_path = fimg_test + dd + '/'
         disps_path = fdisp_test + dd + '/'
         imgs = os.listdir(imgs_path)
@@ -96,12 +102,14 @@ def sf_loader(filepath):
                     test_right_img.append(os.path.join(right_path, img))
                     test_left_disp.append(disp_path + img.split(".")[0] + '.pfm')
                     test_right_disp.append(rdisp_path + img.split(".")[0] + '.pfm')
+    
 
+    # driving数据集↓  ######################################## 
     driving_img = filepath + [x for x in image if 'driving' in x][0]
     driving_disp = filepath + [x for x in disparity if 'driving' in x][0]
-    dsubdir1 = ['15mm_focallength', '35mm_focallength']
-    dsubdir2 = ['scene_backwards', 'scene_forwards']
-    dsubdir3 = ['fast', 'slow']
+    dsubdir1 = ['15mm_focallength', '35mm_focallength']  # 第一级
+    dsubdir2 = ['scene_backwards', 'scene_forwards'] # 两种焦距都包含前景后景
+    dsubdir3 = ['fast', 'slow'] # 前后景都包含两种速度
     for d in dsubdir1:
         img_path1 = driving_img + '/' + d + '/'
         disp_path1 = driving_disp + '/' + d + '/'
@@ -147,7 +155,8 @@ def random_transform(left_img, right_img):
         right_img = transforms.ColorJitter(brightness=0.5, contrast=0.5, hue=0.1)(right_img)
     return left_img, right_img
 
-
+# 继承时需要重写方法 __len__ 和 __getitem__
+# __len__ 是提供数据集大小的方法， __getitem__ 是可以通过索引号找到数据的方法
 class myDataset(data.Dataset):
 
     def __init__(self, left, right, left_disp, right_disp, training, imgloader=img_loader, dploader = disparity_loader,
@@ -173,30 +182,30 @@ class myDataset(data.Dataset):
         left_img = self.imgloader(left)
         right_img = self.imgloader(right)
         dataL, _ = self.dploader(disp_L)
+        # np.ascontiguousarray将一个内存不连续存储的数组转换为内存连续存储的数组，使得运行速度更快
         dataL = np.ascontiguousarray(dataL, dtype=np.float32)
         dataR, _ = self.dploader(disp_R)
         dataR = np.ascontiguousarray(dataR, dtype=np.float32)
 
-        if self.training:
+        if self.training: # 训练时增强
             w, h = left_img.size
             tw, th = 512, 256
-            x1 = random.randint(0, w - tw)
+            x1 = random.randint(0, w - tw) 
             y1 = random.randint(0, h - th)
 
-            left_img = left_img.crop((x1, y1, x1+tw, y1+th))
-            right_img = right_img.crop((x1, y1, x1+tw, y1+th))
+            left_img = left_img.crop((x1, y1, x1+tw, y1+th))  # 随机硬切割为512x256
+            right_img = right_img.crop((x1, y1, x1+tw, y1+th)) # 随机硬切割为512x256
             dataL = dataL[y1:y1+th, x1:x1+tw]
             dataR = dataR[y1:y1+th, x1:x1+tw]
 
-            if self.color_transform:
+            if self.color_transform: # 黑白或者色彩抖动
                 left_img, right_img = random_transform(left_img, right_img)
 
-            left_img = self.img_transorm(left_img)
-            right_img = self.img_transorm(right_img)
+            left_img = self.img_transorm(left_img)  # 标准化
+            right_img = self.img_transorm(right_img)# 标准化
 
             return left_img, right_img, dataL, dataR
-
-        else:
+        else:# 验证时不增强  分辨率为960x544
             w, h = left_img.size
             left_img = left_img.crop((w-960, h-544, w, h))
             right_img = right_img.crop((w-960, h-544, w, h))

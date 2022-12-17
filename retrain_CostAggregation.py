@@ -19,9 +19,9 @@ import loss_functions as lf
 
 parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
-parser.add_argument('--gpu_id', type=str, default='0, 1')
-parser.add_argument('--seed', type=str, default=0)
-parser.add_argument('--batch_size', type=int, default=6)
+parser.add_argument('--gpu_id', type=str, default='0')
+parser.add_argument('--seed', type=str, default=42)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--epoch', type=int, default=10)
 parser.add_argument('--data_path', type=str, default='/media/data/dataset/SceneFlow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
