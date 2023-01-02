@@ -20,12 +20,14 @@ from torchinfo import summary
 from thop import profile
 from thop import clever_format
 
+import wandb
+
 parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
 parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument('--seed', type=str, default=42)
 parser.add_argument('--batch_size', type=int, default=2)
-parser.add_argument('--epoch', type=int, default=1)
+parser.add_argument('--epoch', type=int, default=20)
 parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
 parser.add_argument('--load_path', type=str, default='trained_models/checkpoint_baseline_8epoch.tar')
@@ -78,6 +80,18 @@ for p in agg_model.parameters():
 
 optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
 
+wandb.init(entity="whd", project="Graft-PSMNet")
+wandb.watch_called = False # Re-run the model without restarting the runtime, unnecessary after our next release
+# WandB – Config is a variable that holds and saves hyperparameters and inputs
+config = wandb.config          # Initialize config
+config.batch_size = args.batch_size          # input batch size for training (default: 64)
+config.epochs = args.epoch             # number of epochs to train (default: 10)
+# config.lr = 0.1               # learning rate (default: 0.01)
+config.no_cuda = args.no_cuda         # disables CUDA training
+config.seed = args.seed                # random seed (default: 42)
+# config.log_interval = 1     # how many batches to wait before logging training status
+
+wandb.watch(model, log="all")
 
 def train(imgL, imgR, gt_left, gt_right):
     imgL = torch.FloatTensor(imgL)
@@ -104,6 +118,11 @@ def train(imgL, imgR, gt_left, gt_right):
     loss2 = torch.mean(loss2)
     loss = 0.1 * loss1 + loss2
     # loss = loss1
+
+    wandb.log({
+        "loss1": loss1,
+        "loss2": loss2,
+        "loss_total": loss})
 
     loss.backward()
     optimizer.step()

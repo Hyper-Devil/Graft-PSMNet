@@ -52,13 +52,13 @@ trainLoader = torch.utils.data.DataLoader(
 fe_model = sm.GwcFeature(out_c=64).train() # GwcFeature就是PSMFeature
 model = Agg.PSMAggregator(args.max_disp, udc=True).train()
 
-summary(fe_model, input_size=(1, 3, 640, 640))
+# summary(fe_model, input_size=(1, 3, 640, 640))
 # print(fe_model)
 
-input = torch.randn(1, 3, 512, 256).cuda()  # MACs: 26.178G , params: 2.960M
-macs, params = profile(fe_model, (input,))
-macs, params = clever_format([macs, params], "%.3f")
-print('MACs:', macs ,', params:', params)
+# input = torch.randn(1, 3, 512, 256).cuda()  # MACs: 26.178G , params: 2.960M
+# macs, params = profile(fe_model, (input,))
+# macs, params = clever_format([macs, params], "%.3f")
+# print('MACs:', macs ,', params:', params)
 
 if cuda:
     fe_model = nn.DataParallel(fe_model.cuda())
