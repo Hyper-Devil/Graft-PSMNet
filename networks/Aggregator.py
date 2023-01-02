@@ -9,15 +9,16 @@ from networks.stackhourglass import hourglass_gwcnet, hourglass
 import matplotlib.pyplot as plt
 import loss_functions as lf
 
-
+# cost_type: 'cor', 'l2', 'cat', 'ncat'
 def build_cost_volume(left_fea, right_fea, max_disp, cost_type):
     if cost_type == 'cor':
 
-        left_fea_norm = F.normalize(left_fea, dim=1)
+        #理解为不同通道对应位置归一化 https://blog.csdn.net/qq_41356707/article/details/121809012
+        left_fea_norm = F.normalize(left_fea, dim=1) 
         right_fea_norm = F.normalize(right_fea, dim=1)
 
         cost = torch.zeros(left_fea.size()[0], 1, max_disp // 4,
-                           left_fea.size()[2], left_fea.size()[3]).cuda()
+                           left_fea.size()[2], left_fea.size()[3]).cuda() #(b,1,disp//4,h,w)
 
         for i in range(max_disp // 4):
             if i > 0:
@@ -28,7 +29,7 @@ def build_cost_volume(left_fea, right_fea, max_disp, cost_type):
 
     elif cost_type == 'l2':
         cost = torch.zeros(left_fea.size()[0], 1, max_disp // 4,
-                           left_fea.size()[2], left_fea.size()[3]).cuda()
+                           left_fea.size()[2], left_fea.size()[3]).cuda() #(b,1,disp//4,h,w)
 
         for i in range(max_disp // 4):
             if i > 0:
@@ -41,7 +42,7 @@ def build_cost_volume(left_fea, right_fea, max_disp, cost_type):
     elif cost_type == 'cat':
 
         cost = torch.zeros(left_fea.size()[0], left_fea.size()[1] * 2, max_disp // 4,
-                           left_fea.size()[2], left_fea.size()[3]).cuda()
+                           left_fea.size()[2], left_fea.size()[3]).cuda() #(b,2c,disp//4,h,w)
 
         for i in range(max_disp // 4):
             if i > 0:
@@ -51,13 +52,13 @@ def build_cost_volume(left_fea, right_fea, max_disp, cost_type):
                 cost[:, :left_fea.size()[1], i, :, :] = left_fea
                 cost[:, left_fea.size()[1]:, i, :, :] = right_fea
 
-    elif cost_type == 'ncat':
+    elif cost_type == 'ncat': #带归一化
 
         left_fea = F.normalize(left_fea, dim=1)
         right_fea = F.normalize(right_fea, dim=1)
 
         cost = torch.zeros(left_fea.size()[0], left_fea.size()[1] * 2, max_disp // 4,
-                           left_fea.size()[2], left_fea.size()[3]).cuda()
+                           left_fea.size()[2], left_fea.size()[3]).cuda()#(b,2c,disp//4,h,w)
 
         for i in range(max_disp // 4):
             if i > 0:
@@ -195,6 +196,7 @@ class PSMAggregator(nn.Module):
                                        nn.ReLU(inplace=True),
                                        nn.Conv3d(32, 1, kernel_size=3, padding=1, stride=1, bias=False))
 
+        #权重初始化 https://blog.csdn.net/qq_40379132/article/details/125791681
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -212,8 +214,11 @@ class PSMAggregator(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, left_fea, right_fea, gt_left, training):
+        # 构建cost volume
         cost = build_cost_volume(left_fea, right_fea, self.maxdisp, cost_type='cor')
+        # (b, 64, 160, 160) --> (b, 1, maxdisp//4, 160, 160)
 
+        # 这部分与PSMNet stacked hourglass部分类似 
         cost0 = self.dres0(cost)
         cost1 = self.dres1(cost0) + cost0
 
@@ -265,7 +270,7 @@ class PSMAggregator(nn.Module):
             return loss1, loss2
 
         else:
-            if training:
+            if training: #forward的参数，感觉暂时没啥用，训练为True
                 mask = (gt_left < self.maxdisp) & (gt_left > 0)
                 loss1 = F.smooth_l1_loss(pred3[mask], gt_left[mask])
                 # loss2 = loss1

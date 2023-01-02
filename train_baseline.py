@@ -15,6 +15,9 @@ import networks.Aggregator as Agg
 import networks.feature_extraction as FE
 import loss_functions as lf
 
+from torchinfo import summary
+from thop import profile
+from thop import clever_format
 
 parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
@@ -22,7 +25,7 @@ parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument('--seed', type=str, default=42)
 parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--epoch', type=int, default=8)
-parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/sceneflow/')
+parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
 parser.add_argument('--max_disp', type=int, default=192)
 parser.add_argument('--color_transform', action='store_true', default=False)
@@ -46,12 +49,21 @@ trainLoader = torch.utils.data.DataLoader(
     batch_size=args.batch_size, shuffle=True, num_workers=4, drop_last=False)
 
 
-fe_model = sm.GwcFeature(out_c=64).train()
+fe_model = sm.GwcFeature(out_c=64).train() # GwcFeature就是PSMFeature
 model = Agg.PSMAggregator(args.max_disp, udc=True).train()
+
+summary(fe_model, input_size=(1, 3, 640, 640))
+# print(fe_model)
+
+input = torch.randn(1, 3, 512, 256).cuda()  # MACs: 26.178G , params: 2.960M
+macs, params = profile(fe_model, (input,))
+macs, params = clever_format([macs, params], "%.3f")
+print('MACs:', macs ,', params:', params)
 
 if cuda:
     fe_model = nn.DataParallel(fe_model.cuda())
     model = nn.DataParallel(model.cuda())
+
 
 params = [
     {'params': fe_model.parameters(), 'lr': 1e-3},

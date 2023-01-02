@@ -15,6 +15,10 @@ import networks.U_net as un
 import networks.feature_extraction as FE
 import loss_functions as lf
 
+from torchinfo import summary
+# from torchsummary import summary
+from thop import profile
+from thop import clever_format
 
 parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
@@ -22,7 +26,7 @@ parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument('--seed', type=str, default=42)
 parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--epoch', type=int, default=1)
-parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/sceneflow/')
+parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
 parser.add_argument('--load_path', type=str, default='trained_models/checkpoint_baseline_8epoch.tar')
 parser.add_argument('--max_disp', type=int, default=192)
@@ -45,17 +49,30 @@ trainLoader = torch.utils.data.DataLoader(
     batch_size=args.batch_size, shuffle=True, num_workers=4, drop_last=False)
 
 
-fe_model = FE.VGG_Feature(fixed_param=True).eval()
-model = un.U_Net_v4(img_ch=256, output_ch=64).train()
+# fe_model = FE.VGG_Feature(fixed_param=True).eval()  # 只加载了前15层  MACs: 97.543G , params: 3.471M
+fe_model = FE.CSPDarknet_Feature(fixed_param=True).eval() #MACs: 8.556G , params: 475.904K
+model = un.U_Net_v4(img_ch=128, output_ch=64).train()
 print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
 agg_model = Agg.PSMAggregator(args.max_disp, udc=True).eval()
+
+summary(fe_model, (1, 3, 512, 256))
+# print(fe_model)
+# summary(model, input_size=(1, 256, 160, 160))
+# print(model)
+# summary(agg_model, input_size=(1, 64, 160, 160))
+# print(agg_model)
+
+# input = torch.randn(1, 3, 512, 256).cuda()
+# macs, params = profile(fe_model, (input,))
+# macs, params = clever_format([macs, params], "%.3f")
+# print('MACs:', macs ,', params:', params)
 
 if cuda:
     fe_model = nn.DataParallel(fe_model.cuda())
     model = nn.DataParallel(model.cuda())
     agg_model = nn.DataParallel(agg_model.cuda())
 
-agg_model.load_state_dict(torch.load(args.load_path)['net'])
+agg_model.load_state_dict(torch.load(args.load_path)['net'])  #加载model（PSMAggregator）
 for p in agg_model.parameters():
     p.requires_grad = False
 
@@ -73,6 +90,8 @@ def train(imgL, imgR, gt_left, gt_right):
 
     optimizer.zero_grad()
 
+    # 对所有包裹的计算操作进行分离。但是torch.no_grad()将会使用更少的内存，因为从包裹的开始，就表明不需要计算梯度了，因此就不需要保存中间结果。
+    # requires_grad控制梯度计算，eval控制dropout层停止drop和BN层停止计算均值和方差，但无法控制梯度计算，因此在eval模式下，再加个with_no_grad可以节省计算
     with torch.no_grad():
         left_fea = fe_model(imgL)
         right_fea = fe_model(imgR)
@@ -89,7 +108,7 @@ def train(imgL, imgR, gt_left, gt_right):
     loss.backward()
     optimizer.step()
 
-    return loss1.item(), loss2.item()
+    return loss1.item(), loss2.item() # 取出单元素张量的元素值并返回该值
 
 
 def adjust_learning_rate(optimizer, epoch):

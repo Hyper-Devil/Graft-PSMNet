@@ -23,10 +23,10 @@ import networks.U_net as un
 
 parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
-parser.add_argument('--gpu_id', type=str, default='2')
-parser.add_argument('--seed', type=str, default=0)
+parser.add_argument('--gpu_id', type=str, default='0')
+parser.add_argument('--seed', type=str, default=42)
 parser.add_argument('--kitti', type=str, default='2015')
-parser.add_argument('--data_path', type=str, default='/media/data/dataset/KITTI/data_scene_flow/training/')
+parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/kitti2015/training/')
 parser.add_argument('--load_path', type=str, default='trained_models/checkpoint_final_10epoch.tar')
 parser.add_argument('--max_disp', type=int, default=192)
 args = parser.parse_args()

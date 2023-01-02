@@ -59,10 +59,10 @@ class DisparityRegression(nn.Module):
         self.win_size = win_size
 
     def forward(self, x):
-        disp = torch.arange(0, self.max_disp).view(1, -1, 1, 1).float().to(x.device)
+        disp = torch.arange(0, self.max_disp).view(1, -1, 1, 1).float().to(x.device)  # arange左闭右开 view重排顺序
 
         if self.win_size > 0:
-            max_d = torch.argmax(x, dim=1, keepdim=True)
+            max_d = torch.argmax(x, dim=1, keepdim=True) # 取某维度最大值索引 输出结果的张量y的大小为去掉需比较维度dim后的大小
             d_value = []
             prob_value = []
             for d in range(-self.win_size, self.win_size + 1):
