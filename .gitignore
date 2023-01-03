@@ -3,6 +3,7 @@
 *.pth
 wandb/*
 trained_models/*
+pretrained_models/*
 *.zip
 *.Identifier
 
