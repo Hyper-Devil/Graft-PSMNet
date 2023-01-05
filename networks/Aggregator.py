@@ -8,6 +8,8 @@ from networks.submodule import convbn, convbn_3d, DisparityRegression
 from networks.stackhourglass import hourglass_gwcnet, hourglass
 import matplotlib.pyplot as plt
 import loss_functions as lf
+from torch.cuda.amp import autocast as autocast
+
 
 # cost_type: 'cor', 'l2', 'cat', 'ncat'
 def build_cost_volume(left_fea, right_fea, max_disp, cost_type):
@@ -213,6 +215,7 @@ class PSMAggregator(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
+    @autocast()
     def forward(self, left_fea, right_fea, gt_left, training):
         # 构建cost volume
         cost = build_cost_volume(left_fea, right_fea, self.maxdisp, cost_type='cor')

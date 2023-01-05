@@ -14,6 +14,7 @@ from networks.resnet import ResNet, Bottleneck, BasicBlock_Res
 from networks.vgg import vgg16
 from collections import OrderedDict
 from .network_blocks import DWConv, BaseConv, Focus, CSPLayer, SPPBottleneck # YOLOX
+from torch.cuda.amp import autocast as autocast
 
 # yoloxs = CSPDarknet(0.33, 0.50, depthwise=False, act="silu")
 class CSPDarknet(nn.Module):
@@ -169,6 +170,7 @@ class CSPDarknet_Feature(nn.Module):
             for p in self.to_feat.parameters():
                 p.requires_grad = False  #在最开始创建Tensor时候可以设置的属性，用于表明是否追踪当前Tensor的计算操作。
 
+    @autocast()
     def forward(self, x):
         feature = self.to_feat(x)
 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import math
+from torch.cuda.amp import autocast as autocast
 
 
 class conv_block(nn.Module):
@@ -263,6 +264,7 @@ class U_Net_v4(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
+    @autocast()
     def forward(self, x):
         x1 = self.Conv1(x)              # 32, 1/4
 

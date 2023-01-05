@@ -28,21 +28,24 @@ import wandb
 from dataloader import KITTIloader as kt
 from dataloader import KITTI2012loader as kt2012
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
 parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument('--seed', type=str, default=42)
-parser.add_argument('--batch_size', type=int, default=6)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--epoch', type=int, default=20)
-# parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
-parser.add_argument('--data_path', type=str, default='/root/autodl-tmp/sceneflow/')
+parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
+# parser.add_argument('--data_path', type=str, default='/root/autodl-tmp/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
 parser.add_argument('--load_path', type=str, default='pretrained_models/checkpoint_baseline_8epoch.tar')
 parser.add_argument('--max_disp', type=int, default=192)
 parser.add_argument('--color_transform', action='store_true', default=False)
 parser.add_argument('--eval', action='store_true', default=True)
-# parser.add_argument('--data_path_kitti', type=str, default='/workspace/mnt/e/datasets/kitti2015/training/')
-parser.add_argument('--data_path_kitti', type=str, default='/root/autodl-tmp/kitti2015/training/')
+parser.add_argument('--data_path_kitti', type=str, default='/workspace/mnt/e/datasets/kitti2015/training/')
+# parser.add_argument('--data_path_kitti', type=str, default='/root/autodl-tmp/kitti2015/training/')
 parser.add_argument('--kitti', type=str, default='2015')
 
 
@@ -74,7 +77,7 @@ print('Number of model parameters: {}'.format(
     sum([p.data.nelement() for p in model.parameters()])))
 agg_model = Agg.PSMAggregator(args.max_disp, udc=True).eval()
 
-summary(fe_model, (1, 3, 512, 256))
+# summary(fe_model, (1, 3, 512, 256))
 # print(fe_model)
 # summary(model, input_size=(1, 256, 160, 160))
 # print(model)
@@ -114,6 +117,9 @@ config.seed = args.seed                # random seed (default: 42)
 
 wandb.watch(model, log="all")
 
+scaler = torch.cuda.amp.GradScaler()
+autocast = torch.cuda.amp.autocast
+
 
 def train(imgL, imgR, gt_left, gt_right):
     imgL = torch.FloatTensor(imgL)
@@ -129,27 +135,32 @@ def train(imgL, imgR, gt_left, gt_right):
 
     # 对所有包裹的计算操作进行分离。但是torch.no_grad()将会使用更少的内存，因为从包裹的开始，就表明不需要计算梯度了，因此就不需要保存中间结果。
     # requires_grad控制梯度计算，eval控制dropout层停止drop和BN层停止计算均值和方差，但无法控制梯度计算，因此在eval模式下，再加个with_no_grad可以节省计算
-    with torch.no_grad():
-        left_fea = fe_model(imgL)
-        right_fea = fe_model(imgR)
 
-    agg_left_fea = model(left_fea)
-    agg_right_fea = model(right_fea)
+    with autocast():
+        with torch.no_grad():
+            left_fea = fe_model(imgL)
+            right_fea = fe_model(imgR)
 
-    loss1, loss2 = agg_model(
-        agg_left_fea, agg_right_fea, gt_left, training=True)
-    loss1 = torch.mean(loss1)
-    loss2 = torch.mean(loss2)
-    loss = 0.1 * loss1 + loss2
-    # loss = loss1
+        agg_left_fea = model(left_fea)
+        agg_right_fea = model(right_fea)
+
+        loss1, loss2 = agg_model(
+            agg_left_fea, agg_right_fea, gt_left, training=True)
+        loss1 = torch.mean(loss1)
+        loss2 = torch.mean(loss2)
+        loss = 0.1 * loss1 + loss2
+        # loss = loss1
 
     wandb.log({
         "loss1": loss1,
         "loss2": loss2,
         "loss_total": loss})
 
-    loss.backward()
-    optimizer.step()
+    # loss.backward()
+    # optimizer.step()
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
 
     return loss1.item(), loss2.item()  # 取出单元素张量的元素值并返回该值
 
@@ -228,9 +239,9 @@ def eval_kitti(args, fe_model, model, agg_model):
 
 def adjust_learning_rate(optimizer, epoch):
     if epoch <= 10:
-        lr = 0.00075  # 8  0.001  
+        lr = 0.001  # 8  0.001  
     else:
-        lr = 0.000075  # 8  0.0001  
+        lr = 0.0001  # 8  0.0001  
     # print(lr)
 
     wandb.log({
