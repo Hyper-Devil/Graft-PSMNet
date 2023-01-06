@@ -35,17 +35,17 @@ parser = argparse.ArgumentParser(description='GraftNet')
 parser.add_argument('--no_cuda', action='store_true', default=False)
 parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument('--seed', type=str, default=42)
-parser.add_argument('--batch_size', type=int, default=2)
-parser.add_argument('--epoch', type=int, default=20)
-parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
-# parser.add_argument('--data_path', type=str, default='/root/autodl-tmp/sceneflow/')
+parser.add_argument('--batch_size', type=int, default=8)
+parser.add_argument('--epoch', type=int, default=10)
+# parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
+parser.add_argument('--data_path', type=str, default='/root/autodl-tmp/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
 parser.add_argument('--load_path', type=str, default='pretrained_models/checkpoint_baseline_8epoch.tar')
 parser.add_argument('--max_disp', type=int, default=192)
 parser.add_argument('--color_transform', action='store_true', default=False)
 parser.add_argument('--eval', action='store_true', default=True)
-parser.add_argument('--data_path_kitti', type=str, default='/workspace/mnt/e/datasets/kitti2015/training/')
-# parser.add_argument('--data_path_kitti', type=str, default='/root/autodl-tmp/kitti2015/training/')
+# parser.add_argument('--data_path_kitti', type=str, default='/workspace/mnt/e/datasets/kitti2015/training/')
+parser.add_argument('--data_path_kitti', type=str, default='/root/autodl-tmp/kitti2015/training/')
 parser.add_argument('--kitti', type=str, default='2015')
 
 
@@ -73,7 +73,7 @@ trainLoader = torch.utils.data.DataLoader(
 # MACs: 8.556G , params: 475.904K
 # fe_model = FE.CSPDarknet_Feature(fixed_param=True).eval()
 fe_model = FE.Res50().eval()
-model = un.U_Net_v4(img_ch=128, output_ch=64).train()
+model = un.U_Net_v4(img_ch=256, output_ch=64).train()
 print('Number of model parameters: {}'.format(
     sum([p.data.nelement() for p in model.parameters()])))
 agg_model = Agg.PSMAggregator(args.max_disp, udc=True).eval()
@@ -204,17 +204,18 @@ def eval_kitti(args, fe_model, model, agg_model):
         disp_gt = Image.open(test_ldisp[i])
         disp_gt = np.ascontiguousarray(disp_gt, dtype=np.float32) / 256
         gt_tensor = torch.FloatTensor(disp_gt).unsqueeze(0).unsqueeze(0).cuda()
+        
+        with autocast():
+            with torch.no_grad():
+                left_fea = fe_model(limg_tensor)
+                right_fea = fe_model(rimg_tensor)
 
-        with torch.no_grad():
-            left_fea = fe_model(limg_tensor)
-            right_fea = fe_model(rimg_tensor)
+                left_fea = model(left_fea)
+                right_fea = model(right_fea)
 
-            left_fea = model(left_fea)
-            right_fea = model(right_fea)
-
-            pred_disp = agg_model(left_fea, right_fea,
-                                  gt_tensor, training=False)
-            pred_disp = pred_disp[:, hi - h:, wi - w:]
+                pred_disp = agg_model(left_fea, right_fea,
+                                    gt_tensor, training=False)
+                pred_disp = pred_disp[:, hi - h:, wi - w:]
 
         predict_np = pred_disp.squeeze().cpu().numpy()
 
@@ -239,7 +240,7 @@ def eval_kitti(args, fe_model, model, agg_model):
 
 
 def adjust_learning_rate(optimizer, epoch):
-    if epoch <= 10:
+    if epoch <= 8:
         lr = 0.001  # 8  0.001  
     else:
         lr = 0.0001  # 8  0.0001  

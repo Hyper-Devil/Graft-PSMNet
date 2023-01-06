@@ -267,7 +267,7 @@ class Res50(nn.Module):
         # self.fe.load_state_dict(
         #     torch.load('networks/DenseCL_R50_imagenet.pth'))
         self.fe.load_state_dict(
-            torch.load('networks/densecl_r50_coco_1600ep.pth'))
+            torch.load('networks/densecl_r50_coco_1600ep.pth')["state_dict"], strict=False)
 
     @autocast()
     def forward(self, x):

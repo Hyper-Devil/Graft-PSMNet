@@ -2,6 +2,7 @@
 *.pt
 *.pth
 *.tar
+.ipynb_checkpoints/*
 wandb/*
 *.zip
 *.Identifier
