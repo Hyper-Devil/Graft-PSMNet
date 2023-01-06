@@ -1,9 +1,8 @@
 *.pyc
 *.pt
 *.pth
+*.tar
 wandb/*
-trained_models/*
-pretrained_models/*
 *.zip
 *.Identifier
 
