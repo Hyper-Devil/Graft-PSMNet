@@ -264,15 +264,18 @@ class Res50(nn.Module):
 
         # self.fe.load_state_dict(
         #     torch.load('networks/resnet50-19c8e357.pth'))
+        # self.fe.load_state_dict(
+        #     torch.load('networks/DenseCL_R50_imagenet.pth'))
         self.fe.load_state_dict(
-            torch.load('networks/DenseCL_R50_imagenet.pth'))
+            torch.load('networks/densecl_r50_coco_1600ep.pth'))
 
+    @autocast()
     def forward(self, x):
 
-        self.fe.eval()
+        # self.fe.eval()
 
-        with torch.no_grad():
-            feature = self.fe(x)
+        # with torch.no_grad():
+        feature = self.fe(x)
 
         return feature
 

@@ -71,7 +71,8 @@ trainLoader = torch.utils.data.DataLoader(
 
 # fe_model = FE.VGG_Feature(fixed_param=True).eval()  # 只加载了前15层  MACs: 97.543G , params: 3.471M
 # MACs: 8.556G , params: 475.904K
-fe_model = FE.CSPDarknet_Feature(fixed_param=True).eval()
+# fe_model = FE.CSPDarknet_Feature(fixed_param=True).eval()
+fe_model = FE.Res50().eval()
 model = un.U_Net_v4(img_ch=128, output_ch=64).train()
 print('Number of model parameters: {}'.format(
     sum([p.data.nelement() for p in model.parameters()])))
