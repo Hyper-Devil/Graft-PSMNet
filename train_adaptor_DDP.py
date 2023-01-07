@@ -53,7 +53,7 @@ parser.add_argument('--data_path_kitti', type=str,
                     default='/root/autodl-tmp/kitti2015/training/')
 parser.add_argument('--kitti', type=str, default='2015')
 parser.add_argument(
-    "--local_rank", default=os.environ('LOCAL_RANK'), type=int)
+    "--local_rank", default=os.getenv('LOCAL_RANK', -1), type=int)
 
 args = parser.parse_args()
 
@@ -79,7 +79,7 @@ train_datasets = sf.myDataset(all_limg, all_rimg, all_ldisp, all_rdisp,
 train_sampler = DistributedSampler(train_datasets)
 card_batch_size = args.batch_size // num_gpus
 trainLoader = torch.utils.data.DataLoader(
-    dataset=train_datasets, sampler=train_sampler, batch_size=card_batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    dataset=train_datasets, sampler=train_sampler, batch_size=card_batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
 
 # fe_model = FE.VGG_Feature(fixed_param=True).eval()  # 只加载了前15层
@@ -95,24 +95,29 @@ for p in agg_model.parameters():
 # agg_model.load_state_dict(torch.load(args.load_path)[
 #                             'net'])  # 加载model（PSMAggregator） 
 
-model_dict = model.state_dict()
+model_dict = agg_model.state_dict()
 pretrained_dict = torch.load(args.load_path, map_location = device)['net']
 load_key, no_load_key, temp_dict = [], [], {}
+# print('model_dict')
+# print(model_dict.keys())
+# print('pretrained_dict')
+# print(pretrained_dict.keys())
 for k, v in pretrained_dict.items():
     k = k[7:]
+    # print(k)
     if k in model_dict.keys() and np.shape(model_dict[k]) == np.shape(v):
         temp_dict[k] = v
         load_key.append(k)
     else:
         no_load_key.append(k)
 model_dict.update(temp_dict)
-model.load_state_dict(model_dict)
+agg_model.load_state_dict(model_dict)
 if args.local_rank == 0:
     print("\nSuccessful Load Key:", str(load_key)[:500], "……\nSuccessful Load Key Num:", len(load_key))
     print("\nFail To Load Key:", str(no_load_key)[:500], "……\nFail To Load Key num:", len(no_load_key))
 
 # checkpoint = torch.load(args.load_path, map_location = device)
-# agg_model.load_state_dict({k: v for k, v in checkpoint['net'].items()},strict=True)                       
+# agg_model.load_state_dict({k[7:]: v for k, v in checkpoint['net'].items()},strict=True)                       
 
 
 
@@ -128,9 +133,9 @@ if args.local_rank == 0:
 # macs, params = clever_format([macs, params], "%.3f")
 # print('MACs:', macs ,', params:', params)
 
-# fe_model.to(device)
-# model.to(device)
-# agg_model.to(device)
+fe_model.to(device)
+model.to(device)
+agg_model.to(device)
 
 if num_gpus > 1:
     print('use {} gpus!'.format(num_gpus))
