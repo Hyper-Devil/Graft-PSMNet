@@ -12,6 +12,7 @@ import argparse
 import numpy as np
 from PIL import Image
 from torchvision import transforms
+import math
 
 from dataloader import sceneflow_loader as sf
 import networks.Aggregator as Agg
@@ -35,9 +36,10 @@ torch.backends.cudnn.allow_tf32 = True
 
 parser = argparse.ArgumentParser(description='GraftNet')
 # parser.add_argument('--no_cuda', action='store_true', default=False)
-parser.add_argument('--gpu_id', type=str, default='0,1')
+parser.add_argument('--gpu_id', type=str, default='0,1,2,3')
 parser.add_argument('--seed', type=str, default=42)
-parser.add_argument('--batch_size', type=int, default=16) # 所有卡的batchsize之和
+parser.add_argument('--batch_size', type=int, default=32)  # 所有卡的batchsize之和
+parser.add_argument('--lr', type=float, default=2e-3, help='learning rate')
 parser.add_argument('--epoch', type=int, default=10)
 # parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
 parser.add_argument('--data_path', type=str,
@@ -93,32 +95,32 @@ for p in agg_model.parameters():
     p.requires_grad = False
 
 # agg_model.load_state_dict(torch.load(args.load_path)[
-#                             'net'])  # 加载model（PSMAggregator） 
-
-model_dict = agg_model.state_dict()
-pretrained_dict = torch.load(args.load_path, map_location = device)['net']
-load_key, no_load_key, temp_dict = [], [], {}
-# print('model_dict')
-# print(model_dict.keys())
-# print('pretrained_dict')
-# print(pretrained_dict.keys())
-for k, v in pretrained_dict.items():
-    k = k[7:]
-    # print(k)
-    if k in model_dict.keys() and np.shape(model_dict[k]) == np.shape(v):
-        temp_dict[k] = v
-        load_key.append(k)
-    else:
-        no_load_key.append(k)
-model_dict.update(temp_dict)
-agg_model.load_state_dict(model_dict)
+#                             'net'])  # 加载model（PSMAggregator）
 if args.local_rank == 0:
-    print("\nSuccessful Load Key:", str(load_key)[:500], "……\nSuccessful Load Key Num:", len(load_key))
-    print("\nFail To Load Key:", str(no_load_key)[:500], "……\nFail To Load Key num:", len(no_load_key))
+    model_dict = agg_model.state_dict()
+    pretrained_dict = torch.load(args.load_path, map_location=device)['net']
+    load_key, no_load_key, temp_dict = [], [], {}
+    # print('model_dict')
+    # print(model_dict.keys())
+    # print('pretrained_dict')
+    # print(pretrained_dict.keys())
+    for k, v in pretrained_dict.items():
+        k = k[7:]
+        # print(k)
+        if k in model_dict.keys() and np.shape(model_dict[k]) == np.shape(v):
+            temp_dict[k] = v
+            load_key.append(k)
+        else:
+            no_load_key.append(k)
+    model_dict.update(temp_dict)
+    agg_model.load_state_dict(model_dict)
+    print("\nSuccessful Load Key:", str(load_key)[
+          :500], "……\nSuccessful Load Key Num:", len(load_key))
+    print("\nFail To Load Key:", str(no_load_key)[
+          :500], "……\nFail To Load Key num:", len(no_load_key))
 
 # checkpoint = torch.load(args.load_path, map_location = device)
-# agg_model.load_state_dict({k[7:]: v for k, v in checkpoint['net'].items()},strict=True)                       
-
+# agg_model.load_state_dict({k[7:]: v for k, v in checkpoint['net'].items()},strict=True)
 
 
 # summary(fe_model, (1, 3, 512, 256))
@@ -132,9 +134,9 @@ if args.local_rank == 0:
 # macs, params = profile(fe_model, (input,))
 # macs, params = clever_format([macs, params], "%.3f")
 # print('MACs:', macs ,', params:', params)
-
 fe_model.to(device)
-model.to(device)
+model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
+# model.to(device)
 agg_model.to(device)
 
 if num_gpus > 1:
@@ -145,22 +147,24 @@ if num_gpus > 1:
 
 # if torch.distributed.get_rank() == 0:
 #     # agg_model.load_state_dict(torch.load(args.load_path)[
-#     #                         'net'])  # 加载model（PSMAggregator）  
+#     #                         'net'])  # 加载model（PSMAggregator）
 #     checkpoint = torch.load(args.load_path)
-#     model.load_state_dict({k: v for k, v in checkpoint['net'].items()},strict=True)                       
+#     model.load_state_dict({k: v for k, v in checkpoint['net'].items()},strict=True)
 #     for p in agg_model.parameters():
 #         p.requires_grad = False
 
-optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
+# optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
+optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
 
 if args.local_rank == 0:
     wandb.init(entity="whd", project="Graft-PSMNet")
     wandb.watch_called = False
-    config = wandb.config          # Initialize config
+    config = wandb.config   
     config.batch_size = args.batch_size
     config.num_gpus = num_gpus
+    config.lr = args.lr        
     config.epochs = args.epoch
-    config.seed = args.seed                # random seed (default: 42)
+    config.seed = args.seed 
     wandb.watch(model, log="all")
 
 
@@ -168,7 +172,7 @@ scaler = torch.cuda.amp.GradScaler()
 autocast = torch.cuda.amp.autocast
 
 
-def train(imgL, imgR, gt_left, gt_right,epoch):
+def train(imgL, imgR, gt_left, gt_right, epoch):
     imgL = torch.FloatTensor(imgL)
     imgR = torch.FloatTensor(imgR)
     gt_left = torch.FloatTensor(gt_left)
@@ -303,6 +307,25 @@ def adjust_learning_rate(optimizer, epoch):
         param_group['lr'] = lr
 
 
+def adjust_learning_rate_cosine(optimizer, epoch_now, epoch_total, lr_init, lr_ratio=0.1):
+    warmup_epoch = math.ceil(epoch_total * 0.1)
+    if epoch_now <= warmup_epoch and warmup_epoch == 1:
+        lr = lr_init * 0.25 
+    elif epoch_now <= warmup_epoch and warmup_epoch > 1:
+        lr = lr_init * epoch_now / warmup_epoch
+    else:
+        lr = lr_init * lr_ratio + (lr_init-lr_init * lr_ratio)*(1 + math.cos(
+            math.pi * (epoch_now - warmup_epoch) / (epoch_total - warmup_epoch))) / 2
+    
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+    if args.local_rank == 0:
+        wandb.log({
+            "lr": lr,
+            "epoch": epoch_now})
+
+
 def main():
 
     # start_total_time = time.time()
@@ -314,10 +337,12 @@ def main():
     #     start_epoch = checkpoint['epoch'] + 1
 
     for epoch in range(start_epoch, args.epoch + 1):
-        print('This is %d-th epoch' % (epoch))
+        if args.local_rank == 0:
+            print('This is %d-th epoch' % (epoch))
         total_train_loss1 = 0
         total_train_loss2 = 0
-        adjust_learning_rate(optimizer, epoch)
+        # adjust_learning_rate(optimizer, epoch)
+        adjust_learning_rate_cosine(optimizer, epoch, args.epoch, args.lr)
         train_sampler.set_epoch(epoch)
 
         for batch_id, (imgL, imgR, disp_L, disp_R) in enumerate(tqdm(trainLoader)):
@@ -327,18 +352,17 @@ def main():
         avg_train_loss1 = total_train_loss1 / len(trainLoader)
         avg_train_loss2 = total_train_loss2 / len(trainLoader)
 
-
         if args.local_rank == 0 and args.eval:
             eval_kitti(args, fe_model, model, agg_model)
 
         if args.local_rank == 0:
             print('Epoch %d average training loss1 = %.3f, average training loss2 = %.3f' %
-                (epoch, avg_train_loss1, avg_train_loss2))
+                  (epoch, avg_train_loss1, avg_train_loss2))
 
             state = {'fa_net': model.state_dict(),
-                    'net': agg_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'epoch': epoch}
+                     'net': agg_model.state_dict(),
+                     'optimizer': optimizer.state_dict(),
+                     'epoch': epoch}
             if not os.path.exists(args.save_path):
                 os.mkdir(args.save_path)
             save_model_path = args.save_path + \
@@ -347,6 +371,7 @@ def main():
 
         torch.cuda.empty_cache()
 
+    wandb.finish()
 
 if __name__ == '__main__':
     main()
