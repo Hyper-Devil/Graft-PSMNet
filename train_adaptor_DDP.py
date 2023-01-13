@@ -38,8 +38,8 @@ parser = argparse.ArgumentParser(description='GraftNet')
 # parser.add_argument('--no_cuda', action='store_true', default=False)
 parser.add_argument('--gpu_id', type=str, default='0,1,2,3')
 parser.add_argument('--seed', type=str, default=42)
-parser.add_argument('--batch_size', type=int, default=32)  # 所有卡的batchsize之和
-parser.add_argument('--lr', type=float, default=2e-3, help='learning rate')
+parser.add_argument('--batch_size', type=int, default=8)  # 所有卡的batchsize之和
+parser.add_argument('--lr', type=float, default=1e-2, help='learning rate')
 parser.add_argument('--epoch', type=int, default=10)
 # parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
 parser.add_argument('--data_path', type=str,
@@ -135,8 +135,8 @@ if args.local_rank == 0:
 # macs, params = clever_format([macs, params], "%.3f")
 # print('MACs:', macs ,', params:', params)
 fe_model.to(device)
-model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
-# model.to(device)
+# model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
+model.to(device)
 agg_model.to(device)
 
 if num_gpus > 1:
@@ -154,7 +154,8 @@ if num_gpus > 1:
 #         p.requires_grad = False
 
 # optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
-optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
+# optimizer = optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
+optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.937, weight_decay=5e-4)
 
 if args.local_rank == 0:
     wandb.init(entity="whd", project="Graft-PSMNet")
@@ -218,7 +219,7 @@ def train(imgL, imgR, gt_left, gt_right, epoch):
     return loss1.item(), loss2.item()  # 取出单元素张量的元素值并返回该值
 
 
-def eval_kitti(args, fe_model, model, agg_model):
+def eval_kitti(args, fe_model, model, agg_model, epoch):
     model.eval()
 
     if args.kitti == '2015':
@@ -286,16 +287,17 @@ def eval_kitti(args, fe_model, model, agg_model):
 
     wandb.log({
         "pred_mae": pred_mae / len(test_limg),
-        "pred_op": pred_op / len(test_limg)})
+        "pred_op": pred_op / len(test_limg),
+        "epoch": epoch})
 
     model.train()
 
 
-def adjust_learning_rate(optimizer, epoch):
+def adjust_learning_rate(optimizer, epoch, lr_init, ratio = 0.1):
     if epoch <= 8:
-        lr = 0.001  # 8  0.001
+        lr = lr_init  # 8  0.001
     else:
-        lr = 0.0001  # 8  0.0001
+        lr = lr_init * ratio  # 8  0.0001
     # print(lr)
 
     if args.local_rank == 0:
@@ -331,7 +333,7 @@ def main():
     # start_total_time = time.time()
     start_epoch = 1
     # if torch.distributed.get_rank() == 0:
-    #     checkpoint = torch.load('trained_ft_CA_8.12/checkpoint_3_DA.tar')
+    #     checkpoint = torch.load('trained_models/checkpoint_adaptor_2epoch.tar')
     #     agg_model.load_state_dict(checkpoint['net'])
     #     optimizer.load_state_dict(checkpoint['optimizer'])
     #     start_epoch = checkpoint['epoch'] + 1
@@ -341,7 +343,7 @@ def main():
             print('This is %d-th epoch' % (epoch))
         total_train_loss1 = 0
         total_train_loss2 = 0
-        # adjust_learning_rate(optimizer, epoch)
+        # adjust_learning_rate(optimizer, epoch, args.lr)
         adjust_learning_rate_cosine(optimizer, epoch, args.epoch, args.lr)
         train_sampler.set_epoch(epoch)
 
@@ -353,7 +355,7 @@ def main():
         avg_train_loss2 = total_train_loss2 / len(trainLoader)
 
         if args.local_rank == 0 and args.eval:
-            eval_kitti(args, fe_model, model, agg_model)
+            eval_kitti(args, fe_model, model, agg_model, epoch)
 
         if args.local_rank == 0:
             print('Epoch %d average training loss1 = %.3f, average training loss2 = %.3f' %
