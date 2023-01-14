@@ -36,7 +36,7 @@ parser.add_argument('--no_cuda', action='store_true', default=False)
 parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument('--seed', type=str, default=42)
 parser.add_argument('--batch_size', type=int, default=8)
-parser.add_argument('--epoch', type=int, default=10)
+parser.add_argument('--epoch', type=int, default=20)
 # parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
 parser.add_argument('--data_path', type=str, default='/root/autodl-tmp/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
@@ -103,18 +103,12 @@ for p in agg_model.parameters():
 optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
 
 wandb.init(entity="whd", project="Graft-PSMNet")
-# Re-run the model without restarting the runtime, unnecessary after our next release
 wandb.watch_called = False
-# WandB – Config is a variable that holds and saves hyperparameters and inputs
 config = wandb.config          # Initialize config
-# input batch size for training (default: 64)
 config.batch_size = args.batch_size
-# number of epochs to train (default: 10)
 config.epochs = args.epoch
-# config.lr = 0.1               # learning rate (default: 0.01)
 config.no_cuda = args.no_cuda         # disables CUDA training
 config.seed = args.seed                # random seed (default: 42)
-# config.log_interval = 1     # how many batches to wait before logging training status
 
 wandb.watch(model, log="all")
 
@@ -122,7 +116,7 @@ scaler = torch.cuda.amp.GradScaler()
 autocast = torch.cuda.amp.autocast
 
 
-def train(imgL, imgR, gt_left, gt_right):
+def train(imgL, imgR, gt_left, gt_right, epoch):
     imgL = torch.FloatTensor(imgL)
     imgR = torch.FloatTensor(imgR)
     gt_left = torch.FloatTensor(gt_left)
@@ -155,7 +149,8 @@ def train(imgL, imgR, gt_left, gt_right):
     wandb.log({
         "loss1": loss1,
         "loss2": loss2,
-        "loss_total": loss})
+        "loss_total": loss,
+        "epoch": epoch})
 
     # loss.backward()
     # optimizer.step()
@@ -166,7 +161,7 @@ def train(imgL, imgR, gt_left, gt_right):
     return loss1.item(), loss2.item()  # 取出单元素张量的元素值并返回该值
 
 
-def eval_kitti(args, fe_model, model, agg_model):
+def eval_kitti(args, fe_model, model, agg_model, epoch):
     model.eval()
 
     if args.kitti == '2015':
@@ -234,13 +229,14 @@ def eval_kitti(args, fe_model, model, agg_model):
     
     wandb.log({
         "pred_mae": pred_mae / len(test_limg),
-        "pred_op": pred_op / len(test_limg)})
+        "pred_op": pred_op / len(test_limg),
+        "epoch": epoch})
 
     model.train()
 
 
 def adjust_learning_rate(optimizer, epoch):
-    if epoch <= 8:
+    if epoch <= 10:
         lr = 0.001  # 8  0.001  
     else:
         lr = 0.0001  # 8  0.0001  
@@ -271,7 +267,7 @@ def main():
         adjust_learning_rate(optimizer, epoch)
             
         for batch_id, (imgL, imgR, disp_L, disp_R) in enumerate(tqdm(trainLoader)):
-            train_loss1, train_loss2 = train(imgL, imgR, disp_L, disp_R)
+            train_loss1, train_loss2 = train(imgL, imgR, disp_L, disp_R, epoch)
             total_train_loss1 += train_loss1
             total_train_loss2 += train_loss2
         avg_train_loss1 = total_train_loss1 / len(trainLoader)
@@ -280,7 +276,7 @@ def main():
               (epoch, avg_train_loss1, avg_train_loss2))
 
         if (epoch % 1 == 0) and args.eval:
-            eval_kitti(args, fe_model, model, agg_model)
+            eval_kitti(args, fe_model, model, agg_model, epoch)
         
         state = {'fa_net': model.state_dict(),
                  'net': agg_model.state_dict(),
