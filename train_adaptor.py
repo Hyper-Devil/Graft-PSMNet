@@ -37,15 +37,15 @@ parser.add_argument('--gpu_id', type=str, default='0')
 parser.add_argument('--seed', type=str, default=42)
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--epoch', type=int, default=20)
-# parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
-parser.add_argument('--data_path', type=str, default='/root/autodl-tmp/sceneflow/')
+parser.add_argument('--data_path', type=str, default='/workspace/mnt/e/datasets/sceneflow/')
+# parser.add_argument('--data_path', type=str, default='/root/autodl-tmp/sceneflow/')
 parser.add_argument('--save_path', type=str, default='trained_models/')
 parser.add_argument('--load_path', type=str, default='pretrained_models/checkpoint_baseline_8epoch.tar')
 parser.add_argument('--max_disp', type=int, default=192)
 parser.add_argument('--color_transform', action='store_true', default=False)
 parser.add_argument('--eval', action='store_true', default=True)
-# parser.add_argument('--data_path_kitti', type=str, default='/workspace/mnt/e/datasets/kitti2015/training/')
-parser.add_argument('--data_path_kitti', type=str, default='/root/autodl-tmp/kitti2015/training/')
+parser.add_argument('--data_path_kitti', type=str, default='/workspace/mnt/e/datasets/kitti2015/training/')
+# parser.add_argument('--data_path_kitti', type=str, default='/root/autodl-tmp/kitti2015/training/')
 parser.add_argument('--kitti', type=str, default='2015')
 
 
@@ -71,9 +71,9 @@ trainLoader = torch.utils.data.DataLoader(
 
 # fe_model = FE.VGG_Feature(fixed_param=True).eval()  # 只加载了前15层  MACs: 97.543G , params: 3.471M
 # MACs: 8.556G , params: 475.904K
-# fe_model = FE.CSPDarknet_Feature(fixed_param=True).eval()
-fe_model = FE.Res50().eval()
-model = un.U_Net_v4(img_ch=256, output_ch=64).train()
+fe_model = FE.CSPDarknet_Feature(fixed_param=True).eval() #img_ch=128
+# fe_model = FE.Res50().eval()
+model = un.U_Net_v4(img_ch=128, output_ch=64).train()
 print('Number of model parameters: {}'.format(
     sum([p.data.nelement() for p in model.parameters()])))
 agg_model = Agg.PSMAggregator(args.max_disp, udc=True).eval()
@@ -95,12 +95,32 @@ if cuda:
     model = nn.DataParallel(model.cuda())
     agg_model = nn.DataParallel(agg_model.cuda())
 
-agg_model.load_state_dict(torch.load(args.load_path)[
-                          'net'])  # 加载model（PSMAggregator）
+# agg_model.load_state_dict(torch.load(args.load_path)[
+#                           'net'])  # 加载model（PSMAggregator）
+
+model_dict = agg_model.state_dict()
+pretrained_dict = torch.load(args.load_path)['net']
+load_key, no_load_key, temp_dict = [], [], {}
+for k, v in pretrained_dict.items():
+    # k = k[7:]
+    # print(k)
+    if k in model_dict.keys() and np.shape(model_dict[k]) == np.shape(v):
+        temp_dict[k] = v
+        load_key.append(k)
+    else:
+        no_load_key.append(k)
+model_dict.update(temp_dict)
+agg_model.load_state_dict(model_dict)
+print("\nSuccessful Load Key:", str(load_key)[
+        :500], "……\nSuccessful Load Key Num:", len(load_key))
+print("\nFail To Load Key:", str(no_load_key)[
+        :500], "……\nFail To Load Key num:", len(no_load_key))
+
 for p in agg_model.parameters():
     p.requires_grad = False
 
-optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
+# optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
+optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.937, weight_decay=5e-4)
 
 wandb.init(entity="whd", project="Graft-PSMNet")
 wandb.watch_called = False
